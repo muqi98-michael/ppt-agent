@@ -1,0 +1,9 @@
+# Render 蓝图配置 - 连接 GitHub 仓库后可一键部署
+# 部署后需在 Render 控制台配置 DEEPSEEK_API_KEY 等环境变量
+services:
+  - type: web
+    plan: free
+    name: ppt-agent
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT

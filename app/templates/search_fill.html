@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}PPT搜索填入 - 金蝶{% endblock %}
+{% block extra_css %}
+#status { margin-top: 12px; white-space: pre-wrap; line-height: 1.5; }
+.progress-wrap { margin-top: 12px; display: none; }
+.progress-bar { height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+.progress-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #2563eb, #38bdf8); transition: width 0.5s ease; }
+.status-error { color: #b91c1c; }
+.status-ok { color: #047857; }
+.progress-meta { margin-top: 8px; display: flex; align-items: center; justify-content: space-between; color: #64748b; font-size: 13px; }
+.progress-actions { display: flex; gap: 8px; }
+.retry-row { margin-top: 10px; display: none; gap: 8px; align-items: center; }
+.btn-secondary { background: #334155; }
+.btn-danger { background: #dc2626; }
+{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>PPT搜索填入</h1>
+  <p class="subtitle">输入行业和客户，联网检索公开信息后，自动新增2页并追加到模板末尾。</p>
+
+  <form id="searchFillForm">
+    <div class="field">
+      <label for="industry">行业</label>
+      <input id="industry" name="industry" type="text" value="电子高科" placeholder="例如：制造业、消费电子、汽车零部件" required />
+    </div>
+    <div class="field">
+      <label for="customer">客户</label>
+      <input id="customer" name="customer" type="text" value="深圳市微特精密科技股份有限公司" placeholder="例如：某某集团" required />
+    </div>
+    <div class="field">
+      <label for="model">模型</label>
+      <select id="model" name="model" style="width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px">
+        <option value="deepseek-chat" selected>deepseek-chat（默认）</option>
+        <option value="deepseek-reasoner">deepseek-reasoner</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="template">上传模板 PPT (.pptx)</label>
+      <input id="template" name="template" type="file" accept=".pptx" required />
+    </div>
+    <button type="submit">联网生成并下载</button>
+  </form>
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-meta">
+      <span id="etaText">预计剩余时间：--</span>
+      <div class="progress-actions">
+        <button type="button" class="btn-danger" id="cancelBtn" style="display: none">取消生成</button>
+      </div>
+    </div>
+  </div>
+  <div id="status"></div>
+  <div class="retry-row" id="retryRow">
+    <button type="button" class="btn-secondary" id="retryBtn">超时后重试</button>
+    <span style="color: #64748b; font-size: 13px">建议检查网络后再重试</span>
+  </div>
+  <div style="margin-top: 18px; border-top: 1px dashed #cbd5e1; padding-top: 12px">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px">
+      <strong>DeepSeek 请求日志（摘要）</strong>
+      <button type="button" class="btn-secondary" id="refreshLogsBtn">刷新日志</button>
+    </div>
+    <div id="logPanel" style="font-size: 13px; color: #334155">暂无日志</div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+  const form = document.getElementById("searchFillForm");
+  const status = document.getElementById("status");
+  const progressWrap = document.getElementById("progressWrap");
+  const progressFill = document.getElementById("progressFill");
+  const etaText = document.getElementById("etaText");
+  const cancelBtn = document.getElementById("cancelBtn");
+  const retryRow = document.getElementById("retryRow");
+  const retryBtn = document.getElementById("retryBtn");
+  const refreshLogsBtn = document.getElementById("refreshLogsBtn");
+  const logPanel = document.getElementById("logPanel");
+  let lastPayload = null;
+  let currentController = null;
+  let currentCanceled = false;
+
+  function setStatus(text, type = "normal") {
+    status.textContent = text;
+    status.className = type === "error" ? "status-error" : type === "ok" ? "status-ok" : "";
+  }
+
+  function setFormDisabled(disabled) {
+    Array.from(form.elements).forEach((el) => { el.disabled = disabled; });
+  }
+
+  function parseFilename(contentDisposition) {
+    if (!contentDisposition) return "search_fill_output.pptx";
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match && utf8Match[1]) {
+      try { return decodeURIComponent(utf8Match[1]); } catch (_) {}
+    }
+    const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+    return plainMatch?.[1] || "search_fill_output.pptx";
+  }
+
+  async function loadLogs() {
+    try {
+      const resp = await fetch("/api/deepseek-logs?limit=10");
+      const data = await resp.json();
+      const items = data.items || [];
+      if (!items.length) { logPanel.textContent = "暂无日志"; return; }
+      const lines = items.map((item) => {
+        const mark = item.status === "success" ? "✅" : "❌";
+        const err = item.error ? ` | 错误: ${item.error}` : "";
+        return `${mark} [${item.timestamp}] ${item.model} | ${item.industry} / ${item.customer} | ${item.duration_ms}ms | ${item.summary}${err}`;
+      });
+      logPanel.textContent = lines.join("\n");
+    } catch (_) { logPanel.textContent = "日志加载失败"; }
+  }
+
+  async function submitSearchFill(payload, isRetry = false) {
+    setFormDisabled(true);
+    retryRow.style.display = "none";
+    progressWrap.style.display = "block";
+    cancelBtn.style.display = "inline-block";
+    cancelBtn.disabled = false;
+    progressFill.style.width = "8%";
+    etaText.textContent = "预计剩余时间：2:00";
+    setStatus(isRetry ? "正在重试：准备请求..." : "准备请求...");
+
+    const stages = [
+      { p: 15, t: "已提交参数，开始联网搜索行业信息..." },
+      { p: 35, t: "正在检索行业趋势、痛点与IT规划..." },
+      { p: 55, t: "正在检索客户官网、新闻与需求信息..." },
+      { p: 75, t: "正在整理要点并生成两页PPT内容..." },
+      { p: 90, t: "正在写入模板并打包下载文件..." },
+    ];
+    let stageIdx = 0;
+    const stageTimer = setInterval(() => {
+      if (stageIdx >= stages.length) return;
+      progressFill.style.width = `${stages[stageIdx].p}%`;
+      setStatus(stages[stageIdx].t);
+      stageIdx += 1;
+    }, 2200);
+
+    const controller = new AbortController();
+    currentController = controller;
+    currentCanceled = false;
+    const timeoutMs = 120000;
+    const startAt = Date.now();
+    const etaTimer = setInterval(() => {
+      const elapsed = Date.now() - startAt;
+      const leftMs = Math.max(0, timeoutMs - elapsed);
+      const sec = Math.ceil(leftMs / 1000);
+      const mm = String(Math.floor(sec / 60)).padStart(1, "0");
+      const ss = String(sec % 60).padStart(2, "0");
+      etaText.textContent = `预计剩余时间：${mm}:${ss}`;
+    }, 500);
+    const timeoutId = setTimeout(() => controller.abort("timeout"), timeoutMs);
+
+    try {
+      const resp = await fetch("/search-fill", { method: "POST", body: payload, signal: controller.signal });
+      clearInterval(stageTimer);
+      clearInterval(etaTimer);
+      clearTimeout(timeoutId);
+
+      if (!resp.ok) {
+        const msg = await resp.text();
+        throw new Error(msg || "生成失败");
+      }
+
+      progressFill.style.width = "100%";
+      const blob = await resp.blob();
+      const filename = parseFilename(resp.headers.get("Content-Disposition"));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      etaText.textContent = "预计剩余时间：00:00";
+      setStatus("完成：已生成并下载新增2页分析内容的PPT。", "ok");
+    } catch (error) {
+      clearInterval(stageTimer);
+      clearInterval(etaTimer);
+      clearTimeout(timeoutId);
+      progressFill.style.width = "0%";
+      if (currentCanceled) {
+        etaText.textContent = "预计剩余时间：--";
+        setStatus("已取消生成。你可以修改参数后重新提交。", "error");
+      } else if (error.name === "AbortError") {
+        setStatus("请求超时：网络检索或生成耗时较长。可点击「超时后重试」再次提交。", "error");
+        etaText.textContent = "预计剩余时间：--";
+        retryRow.style.display = "flex";
+      } else {
+        etaText.textContent = "预计剩余时间：--";
+        setStatus(`失败: ${error.message}`, "error");
+      }
+    } finally {
+      currentController = null;
+      cancelBtn.style.display = "none";
+      setFormDisabled(false);
+      await loadLogs();
+    }
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const fd = new FormData();
+    fd.append("industry", document.getElementById("industry").value.trim());
+    fd.append("customer", document.getElementById("customer").value.trim());
+    fd.append("model", document.getElementById("model").value);
+    fd.append("template", document.getElementById("template").files[0]);
+    lastPayload = fd;
+    await submitSearchFill(fd);
+  });
+
+  retryBtn.addEventListener("click", async () => {
+    if (!lastPayload) return;
+    await submitSearchFill(lastPayload, true);
+  });
+
+  cancelBtn.addEventListener("click", () => {
+    if (!currentController) return;
+    currentCanceled = true;
+    cancelBtn.disabled = true;
+    currentController.abort("user_cancel");
+  });
+
+  refreshLogsBtn.addEventListener("click", async () => { await loadLogs(); });
+
+  loadLogs();
+</script>
+{% endblock %}

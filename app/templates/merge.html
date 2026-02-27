@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}PPT合并处理 - 金蝶{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>PPT合并处理</h1>
+  <p class="subtitle">上传 1 个模板 PPT 与多个内容 PPT，系统按顺序合并并导出新文件。</p>
+
+  <form id="mergeForm">
+    <div class="field">
+      <label for="template">1) 上传模板 PPT (.pptx)</label>
+      <input id="template" name="template" type="file" accept=".pptx" required />
+    </div>
+
+    <div class="field">
+      <label for="sources">2) 上传多个内容 PPT (.pptx)</label>
+      <input
+        id="sources"
+        name="sources"
+        type="file"
+        accept=".pptx"
+        multiple
+        required
+      />
+    </div>
+
+    <button type="submit">开始处理并下载</button>
+  </form>
+
+  <div id="status" style="margin-top: 12px; white-space: pre-wrap;"></div>
+  <div class="feature-note" style="margin-top: 18px; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px; background: #f8fafc; color: #475569; font-size: 14px;">
+    可从左侧导航进入「PPT搜索填入」，自动联网检索并新增2页分析内容。
+  </div>
+</div>
+
+<script>
+  const form = document.getElementById("mergeForm");
+  const status = document.getElementById("status");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    status.textContent = "处理中，请稍候...";
+
+    const formData = new FormData();
+    const template = document.getElementById("template").files[0];
+    const sourceFiles = document.getElementById("sources").files;
+
+    formData.append("template", template);
+    for (const file of sourceFiles) {
+      formData.append("sources", file);
+    }
+
+    try {
+      const resp = await fetch("/merge", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!resp.ok) {
+        const message = await resp.text();
+        throw new Error(message || "处理失败");
+      }
+
+      const blob = await resp.blob();
+      const imported = resp.headers.get("X-Merge-Imported-Slides");
+      const adjusted = resp.headers.get("X-Merge-Adjusted-Slides");
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = resp.headers.get("Content-Disposition")?.split("filename=")[1]?.replaceAll('"', "") || "merged.pptx";
+      link.click();
+      URL.revokeObjectURL(url);
+
+      status.textContent = `完成: 共导入 ${imported || "?"} 页，布局调整 ${adjusted || "?"} 页。`;
+    } catch (error) {
+      status.textContent = `失败: ${error.message}`;
+    }
+  });
+</script>
+{% endblock %}

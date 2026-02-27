@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}API设置 - 金蝶{% endblock %}
+{% block content %}
+<div class="card">
+  <h1 style="margin-top: 0">DeepSeek API设置</h1>
+  <p style="margin-top: 0; color: #64748b">API Key 仅保存到本地 `.env` 文件，不会显示明文。</p>
+
+  <form id="settingsForm">
+    <div class="field">
+      <label for="apiKey">DEEPSEEK_API_KEY（留空表示不修改）</label>
+      <div style="display: flex; gap: 8px; align-items: center">
+        <input id="apiKey" name="deepseek_api_key" type="password" placeholder="sk-..." style="flex: 1" />
+        <button type="button" id="toggleKeyBtn" style="background: #64748b; white-space: nowrap">显示</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="baseUrl">DEEPSEEK_BASE_URL</label>
+      <input id="baseUrl" name="deepseek_base_url" type="text" />
+    </div>
+    <div class="field">
+      <label for="model">DEEPSEEK_MODEL</label>
+      <input id="model" name="deepseek_model" type="text" />
+    </div>
+    <div class="field">
+      <label for="timeout">DEEPSEEK_TIMEOUT_SECONDS</label>
+      <input id="timeout" name="deepseek_timeout_seconds" type="text" />
+    </div>
+    <div style="display: flex; gap: 8px">
+      <button type="submit">保存配置</button>
+      <button type="button" id="testConnBtn" style="background: #334155">测试连接</button>
+    </div>
+  </form>
+  <div id="status" style="margin-top: 10px; color: #047857; white-space: pre-wrap;"></div>
+</div>
+
+<script>
+  const form = document.getElementById("settingsForm");
+  const status = document.getElementById("status");
+  const testConnBtn = document.getElementById("testConnBtn");
+  const apiKeyInput = document.getElementById("apiKey");
+  const toggleKeyBtn = document.getElementById("toggleKeyBtn");
+
+  toggleKeyBtn.addEventListener("click", () => {
+    const isHidden = apiKeyInput.type === "password";
+    apiKeyInput.type = isHidden ? "text" : "password";
+    toggleKeyBtn.textContent = isHidden ? "隐藏" : "显示";
+  });
+
+  async function loadSettings() {
+    const resp = await fetch("/api/settings");
+    const data = await resp.json();
+    document.getElementById("baseUrl").value = data.deepseek_base_url || "https://api.deepseek.com";
+    document.getElementById("model").value = data.deepseek_model || "deepseek-chat";
+    document.getElementById("timeout").value = data.deepseek_timeout_seconds || "90";
+    status.textContent = data.has_api_key
+      ? `当前已配置 API Key（${data.masked_api_key}）`
+      : "当前未配置 API Key";
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const fd = new FormData(form);
+    const resp = await fetch("/api/settings", { method: "POST", body: fd });
+    const data = await resp.json();
+    if (!resp.ok) {
+      status.style.color = "#b91c1c";
+      status.textContent = `保存失败: ${data.detail || "未知错误"}`;
+      return;
+    }
+    status.style.color = "#047857";
+    status.textContent = data.has_api_key
+      ? `保存成功，当前 Key：${data.masked_api_key}`
+      : "保存成功，但仍未配置 API Key";
+    document.getElementById("apiKey").value = "";
+  });
+
+  testConnBtn.addEventListener("click", async () => {
+    status.style.color = "#334155";
+    status.textContent = "正在测试连接，请稍候...";
+    const fd = new FormData();
+    fd.append("deepseek_base_url", document.getElementById("baseUrl").value.trim());
+    fd.append("deepseek_model", document.getElementById("model").value.trim());
+    fd.append("deepseek_timeout_seconds", document.getElementById("timeout").value.trim());
+    const resp = await fetch("/api/settings/test", { method: "POST", body: fd });
+    const text = await resp.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch (_) { data = { detail: text || `HTTP ${resp.status}` }; }
+    if (!resp.ok) {
+      status.style.color = "#b91c1c";
+      status.textContent = `测试失败: ${data.detail || data.message || "未知错误"}`;
+      return;
+    }
+    status.style.color = "#047857";
+    status.textContent = `测试成功：模型 ${data.model || ""} 可用。返回示例：${data.preview || "ok"}`;
+  });
+
+  loadSettings();
+</script>
+{% endblock %}

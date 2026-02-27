@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}PPT 智能工具台{% endblock %}</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        color: #1f2937;
+        background: #f8fafc;
+      }
+      .app-layout {
+        display: flex;
+        min-height: 100vh;
+      }
+      /* 左侧导航 */
+      .sidebar {
+        width: 260px;
+        min-width: 260px;
+        background: #1e293b;
+        color: #e2e8f0;
+        display: flex;
+        flex-direction: column;
+      }
+      .sidebar-brand {
+        padding: 20px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid #334155;
+      }
+      .sidebar-brand-icon {
+        width: 36px;
+        height: 36px;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        font-weight: 700;
+        color: white;
+      }
+      .sidebar-brand-text {
+        font-size: 18px;
+        font-weight: 700;
+        color: white;
+      }
+      .btn-new-chat {
+        margin: 16px;
+        padding: 12px 16px;
+        background: #334155;
+        border: 1px solid #475569;
+        border-radius: 10px;
+        color: #e2e8f0;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        text-decoration: none;
+        transition: background 0.2s;
+      }
+      .btn-new-chat:hover {
+        background: #475569;
+      }
+      .sidebar-menu {
+        padding: 8px 12px;
+        flex: 1;
+        overflow-y: auto;
+      }
+      .sidebar-menu-title {
+        font-size: 12px;
+        color: #94a3b8;
+        padding: 12px 8px 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .sidebar-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 12px;
+        border-radius: 8px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 14px;
+        margin-bottom: 4px;
+        transition: background 0.2s;
+      }
+      .sidebar-menu-item:hover {
+        background: #334155;
+        color: white;
+      }
+      .sidebar-menu-item.active {
+        background: #334155;
+        color: white;
+        font-weight: 500;
+      }
+      .sidebar-menu-item svg {
+        flex-shrink: 0;
+        opacity: 0.8;
+      }
+      .sidebar-history {
+        padding: 12px 16px;
+        border-top: 1px solid #334155;
+      }
+      .sidebar-history-title {
+        font-size: 12px;
+        color: #94a3b8;
+        padding: 8px 0;
+      }
+      .sidebar-history-list {
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .sidebar-history-item {
+        padding: 8px 10px;
+        font-size: 13px;
+        color: #94a3b8;
+        border-radius: 6px;
+        margin-bottom: 4px;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sidebar-history-item:hover {
+        background: #334155;
+        color: #e2e8f0;
+      }
+      /* 右侧主内容 */
+      .main-content {
+        flex: 1;
+        overflow-y: auto;
+        background: #ffffff;
+      }
+      .main-inner {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 32px 24px;
+      }
+      .card {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 24px;
+        background: #ffffff;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+      }
+      h1 { margin-top: 0; margin-bottom: 8px; }
+      .subtitle { margin: 0 0 18px 0; color: #64748b; }
+      .field { margin-bottom: 16px; }
+      label { display: block; font-weight: 600; margin-bottom: 6px; }
+      input[type="text"],
+      input[type="password"],
+      input[type="file"],
+      select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      button {
+        border: 0;
+        background: #2563eb;
+        color: white;
+        border-radius: 8px;
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.65; cursor: not-allowed; }
+      {% block extra_css %}{% endblock %}
+    </style>
+  </head>
+  <body>
+    <div class="app-layout">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="sidebar-brand-icon">金</div>
+          <span class="sidebar-brand-text">金蝶</span>
+        </div>
+        <a href="/" class="btn-new-chat">
+          <span>+</span> 新对话
+        </a>
+        <nav class="sidebar-menu">
+          <div class="sidebar-menu-title">功能菜单</div>
+          <a href="/" class="sidebar-menu-item {% if active == 'new_chat' %}active{% endif %}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            新对话
+          </a>
+          <a href="/search-fill" class="sidebar-menu-item {% if active == 'search_fill' %}active{% endif %}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            PPT搜索填入
+          </a>
+          <a href="/merge" class="sidebar-menu-item {% if active == 'merge' %}active{% endif %}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            PPT合并处理
+          </a>
+          <a href="/settings" class="sidebar-menu-item {% if active == 'settings' %}active{% endif %}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            API设置
+          </a>
+        </nav>
+        <div class="sidebar-history">
+          <div class="sidebar-history-title">历史记录</div>
+          <div class="sidebar-history-list" id="historyList">
+            <div class="sidebar-history-item" style="color:#64748b">暂无记录</div>
+          </div>
+        </div>
+      </aside>
+      <main class="main-content">
+        <div class="main-inner">
+          {% block content %}{% endblock %}
+        </div>
+      </main>
+    </div>
+    <script>
+      (async function loadHistory() {
+        const el = document.getElementById("historyList");
+        try {
+          const resp = await fetch("/api/deepseek-logs?limit=15");
+          const data = await resp.json();
+          const items = data.items || [];
+          if (!items.length) {
+            el.innerHTML = '<div class="sidebar-history-item" style="color:#64748b">暂无记录</div>';
+            return;
+          }
+          el.innerHTML = items.map((item) => {
+            const text = `${item.industry || ""} / ${item.customer || ""}`.replace(/^\/\s*|\s*\/\s*$/g, "") || item.summary || "搜索记录";
+            return `<a href="/search-fill" class="sidebar-history-item" style="text-decoration:none;display:block;color:inherit">${escapeHtml(text)}</a>`;
+          }).join("");
+        } catch (_) {
+          el.innerHTML = '<div class="sidebar-history-item" style="color:#64748b">加载失败</div>';
+        }
+        function escapeHtml(s) {
+          const d = document.createElement("div");
+          d.textContent = s;
+          return d.innerHTML;
+        }
+      })();
+    </script>
+    {% block extra_js %}{% endblock %}
+  </body>
+</html>
