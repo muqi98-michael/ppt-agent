@@ -4,5 +4,6 @@ python-multipart
 python-pptx
 jinja2
 python-dotenv
+Pillow
 pytest
 httpx
