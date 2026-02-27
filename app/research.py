@@ -266,3 +266,263 @@ def _append_log(
 def get_deepseek_logs(limit: int = 20) -> list[dict[str, Any]]:
     size = max(1, min(limit, 100))
     return list(_DEEPSEEK_LOGS)[:size]
+
+
+def summarize_chapter_contents(
+    chapters: list[dict[str, str]],
+    model_override: str | None = None,
+) -> list[str]:
+    """调用 DeepSeek 对章节内容做通顺、简约的提炼总结。
+
+    输入: [{"title": "...", "content": "..."}, ...]
+    输出: 与输入同长度的摘要列表
+    """
+    if not chapters:
+        return []
+
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if not api_key:
+        return [_fallback_summary(item.get("content", "")) for item in chapters]
+
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    model = model_override.strip() if model_override and model_override.strip() else os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    timeout_s = float(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "90"))
+
+    compact_items = []
+    for idx, item in enumerate(chapters, start=1):
+        compact_items.append(
+            {
+                "index": idx,
+                "title": str(item.get("title", "")).strip()[:120],
+                "content": str(item.get("content", "")).strip()[:6000],
+            }
+        )
+
+    system_prompt = (
+        "你是企业级文档编审助手。请对章节内容做通顺、简约、无空话的中文提炼。"
+        "输出必须是合法 JSON，不要输出 markdown 代码块。"
+    )
+    user_prompt = f"""
+请根据以下章节内容，生成每章摘要。
+
+输入 JSON:
+{json.dumps(compact_items, ensure_ascii=False)}
+
+请输出 JSON:
+{{
+  "summaries": [
+    {{"index": 1, "summary": "..." }}
+  ]
+}}
+
+要求：
+1) 每章摘要 2-4 句，总长度 60-150 字；
+2) 语言自然、通顺、简约，保留关键信息，不要口号式空话；
+3) 严禁编造输入中没有的事实；
+4) summaries 顺序与输入一致。
+"""
+
+    req_body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.2,
+    }
+
+    try:
+        with httpx.Client(timeout=timeout_s) as client:
+            resp = client.post(
+                f"{base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=req_body,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        payload = _extract_json_object(content)
+        summaries_raw = payload.get("summaries")
+        if not isinstance(summaries_raw, list):
+            raise ValueError("summaries 字段缺失")
+
+        summaries: list[str] = []
+        for i, item in enumerate(summaries_raw[: len(chapters)]):
+            if not isinstance(item, dict):
+                summaries.append(_fallback_summary(chapters[i].get("content", "")))
+                continue
+            text = _normalize_text(str(item.get("summary") or ""))
+            if not text:
+                text = _fallback_summary(chapters[i].get("content", ""))
+            summaries.append(text[:220])
+
+        while len(summaries) < len(chapters):
+            summaries.append(_fallback_summary(chapters[len(summaries)].get("content", "")))
+        return summaries
+    except Exception:
+        return [_fallback_summary(item.get("content", "")) for item in chapters]
+
+
+def _fallback_summary(content: str) -> str:
+    text = _normalize_text(content or "")
+    if not text:
+        return "本章内容较少，建议结合原始页面进行补充。"
+    if len(text) <= 140:
+        return text
+    return text[:140] + "..."
+
+
+def parse_visit_requirements(query: str, model_override: str | None = None) -> dict[str, Any]:
+    text = _normalize_text(query or "")
+    if not text:
+        return {
+            "industry": "",
+            "customer": "",
+            "duration": "",
+            "product_name": "",
+            "visit_role": "",
+            "business_domains": [],
+        }
+
+    industries = ["装备制造", "电子高科技", "汽车零部件", "生命科学", "食品消费", "流程制造", "现代服务", "日化日用品", "现代农牧业", "餐饮行业"]
+    durations = ["15分钟", "30分钟"]
+    products = ["金蝶AI星空", "金蝶AI星瀚", "金蝶AI HR"]
+    roles = ["老板", "供应链负责人", "财务负责人", "生产制造负责人", "IT负责人"]
+    domains = ["财务管理", "供应链管理", "采购管理", "服务管理", "研发管理", "生产管理", "资产管理", "人力资源管理"]
+
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if api_key:
+        try:
+            base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+            model = model_override.strip() if model_override and model_override.strip() else os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+            timeout_s = float(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "90"))
+            system_prompt = "你是企业拜访PPT需求解析助手。只输出 JSON，不要输出 markdown。"
+            user_prompt = f"""
+请从用户输入中抽取字段，返回 JSON：
+{{
+  "industry": "",
+  "customer": "",
+  "duration": "",
+  "product_name": "",
+  "visit_role": "",
+  "business_domains": []
+}}
+
+限制：
+- customer 仅保留企业名，不得重复词组，不要包含“行业/分钟/产品/角色”等无关词。
+- business_domains 仅从候选中选择，可多选。
+
+候选：
+industry: {industries}
+duration: {durations}
+product_name: {products}
+visit_role: {roles}
+business_domains: {domains}
+
+输入：{text}
+"""
+            req_body = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.1,
+            }
+            with httpx.Client(timeout=timeout_s) as client:
+                resp = client.post(
+                    f"{base_url.rstrip('/')}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json=req_body,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            parsed = _extract_json_object(content)
+            out = {
+                "industry": _pick_option(str(parsed.get("industry") or ""), industries, {"电子高科": "电子高科技"}),
+                "customer": _sanitize_customer(str(parsed.get("customer") or "")),
+                "duration": _pick_option(str(parsed.get("duration") or ""), durations, {}),
+                "product_name": _pick_option(str(parsed.get("product_name") or ""), products, {}),
+                "visit_role": _pick_option(
+                    str(parsed.get("visit_role") or ""),
+                    roles,
+                    {"CFO": "财务负责人", "cfo": "财务负责人", "CEO": "老板", "ceo": "老板", "CIO": "IT负责人", "cio": "IT负责人"},
+                ),
+                "business_domains": _pick_multi_options(parsed.get("business_domains"), domains),
+            }
+            if out["customer"]:
+                return out
+        except Exception:
+            pass
+
+    return _fallback_parse_visit_requirements(text)
+
+
+def _fallback_parse_visit_requirements(text: str) -> dict[str, Any]:
+    industries = ["装备制造", "电子高科技", "汽车零部件", "生命科学", "食品消费", "流程制造", "现代服务", "日化日用品", "现代农牧业", "餐饮行业"]
+    products = ["金蝶AI星空", "金蝶AI星瀚", "金蝶AI HR"]
+    roles = ["老板", "供应链负责人", "财务负责人", "生产制造负责人", "IT负责人"]
+    domains = ["财务管理", "供应链管理", "采购管理", "服务管理", "研发管理", "生产管理", "资产管理", "人力资源管理"]
+    role_alias = {"CFO": "财务负责人", "cfo": "财务负责人", "CEO": "老板", "ceo": "老板", "CIO": "IT负责人", "cio": "IT负责人"}
+
+    industry = _pick_option(text, industries, {"电子高科": "电子高科技"})
+    duration = "30分钟" if "30分钟" in text else "15分钟" if "15分钟" in text else ""
+    product_name = _pick_option(text, products, {})
+    visit_role = _pick_option(text, roles, role_alias)
+    business_domains = [d for d in domains if d in text]
+
+    customer = ""
+    m = __import__("re").search(r"拜访\s*([^，。,.\s]{2,40}?)(?:企业|公司)", text)
+    if m and m.group(1):
+        customer = m.group(1)
+    if not customer:
+        m2 = __import__("re").search(r"客户(?:是|为)\s*([^，。,.\s]{2,40})", text)
+        if m2 and m2.group(1):
+            cand = m2.group(1)
+            if cand not in roles and cand not in role_alias:
+                customer = cand
+    customer = _sanitize_customer(customer)
+    return {
+        "industry": industry,
+        "customer": customer,
+        "duration": duration,
+        "product_name": product_name,
+        "visit_role": visit_role,
+        "business_domains": business_domains,
+    }
+
+
+def _pick_option(text: str, options: list[str], alias: dict[str, str]) -> str:
+    for key, val in alias.items():
+        if key and key in text:
+            return val
+    for op in options:
+        if op in text:
+            return op
+    return ""
+
+
+def _pick_multi_options(value: Any, options: list[str]) -> list[str]:
+    if isinstance(value, list):
+        picked = [str(x).strip() for x in value if str(x).strip() in options]
+        return _dedupe_keep_order(picked)
+    text = str(value or "")
+    picked = [op for op in options if op in text]
+    return _dedupe_keep_order(picked)
+
+
+def _sanitize_customer(raw: str) -> str:
+    text = _normalize_text(raw or "")
+    if not text:
+        return ""
+    text = text.replace("企业", "").replace("公司", "")
+    text = __import__("re").sub(r"(行业|分钟|产品|角色|业务域).*$", "", text).strip()
+    # 抑制重复短语（例如连续重复“电子高科技行业的”）
+    for n in range(2, 9):
+        if len(text) < n * 3:
+            continue
+        unit = text[:n]
+        while text.startswith(unit * 2):
+            text = text[n:]
+    return text[:40]

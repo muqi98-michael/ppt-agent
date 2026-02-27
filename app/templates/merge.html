@@ -3,12 +3,13 @@
 {% block content %}
 <div class="card">
   <h1>PPT合并处理</h1>
-  <p class="subtitle">上传 1 个模板 PPT 与多个内容 PPT，系统按顺序合并并导出新文件。</p>
+  <p class="subtitle">本模块用于验证：通过各种条件找到多个原子 PPT，并在这里合并到统一模板中导出。</p>
 
   <form id="mergeForm">
     <div class="field">
-      <label for="template">1) 上传模板 PPT (.pptx)</label>
-      <input id="template" name="template" type="file" accept=".pptx" required />
+      <label for="template">1) 上传模板 PPT (.pptx，可选)</label>
+      <input id="template" name="template" type="file" accept=".pptx" />
+      <div style="margin-top: 6px; color:#64748b; font-size:13px;">优先使用本次上传模板；未上传时自动使用“方案库管理”中的统一模板。</div>
     </div>
 
     <div class="field">
@@ -36,6 +37,12 @@
   const form = document.getElementById("mergeForm");
   const status = document.getElementById("status");
 
+  function parseTemplateSource(source) {
+    if (source === "upload") return "上传模板";
+    if (source === "unified_db") return "统一模板";
+    return "未知";
+  }
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     status.textContent = "处理中，请稍候...";
@@ -44,7 +51,9 @@
     const template = document.getElementById("template").files[0];
     const sourceFiles = document.getElementById("sources").files;
 
-    formData.append("template", template);
+    if (template) {
+      formData.append("template", template);
+    }
     for (const file of sourceFiles) {
       formData.append("sources", file);
     }
@@ -63,6 +72,7 @@
       const blob = await resp.blob();
       const imported = resp.headers.get("X-Merge-Imported-Slides");
       const adjusted = resp.headers.get("X-Merge-Adjusted-Slides");
+      const templateSource = parseTemplateSource(resp.headers.get("X-Template-Source"));
 
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -71,7 +81,7 @@
       link.click();
       URL.revokeObjectURL(url);
 
-      status.textContent = `完成: 共导入 ${imported || "?"} 页，布局调整 ${adjusted || "?"} 页。`;
+      status.textContent = `完成: 共导入 ${imported || "?"} 页，布局调整 ${adjusted || "?"} 页。模板来源：${templateSource}`;
     } catch (error) {
       status.textContent = `失败: ${error.message}`;
     }

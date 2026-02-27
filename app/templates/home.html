@@ -2,24 +2,102 @@
 {% block title %}新对话 - 金蝶{% endblock %}
 {% block content %}
 <div class="chat-placeholder">
-  <h1 style="font-size: 28px; margin-bottom: 12px; color: #1e293b;">欢迎回来，你需要什么产品资料</h1>
-  <p style="color: #64748b; margin-bottom: 32px;">在此输入您的问题或需求，AI 助手将为您提供帮助。</p>
+  <h1 style="font-size: 28px; margin-bottom: 12px; color: #1e293b">欢迎回来，你需要什么产品资料</h1>
+  <p style="color: #64748b; margin-bottom: 24px">输入自然语言后可自动解析关键过滤条件，也可通过下方选项快速生成拜访话术。</p>
+
   <div class="chat-input-wrap">
     <div class="chat-input-box">
       <span class="chat-input-prefix">@</span>
-      <input type="text" placeholder="输入您的问题..." class="chat-input" readonly />
+      <textarea id="queryInput" class="chat-input" rows="2">我要去拜访 深圳电子高科行业的 冠旭电子 企业，客户是CFO，给我个 15分钟的拜访产品方案</textarea>
     </div>
     <div class="chat-input-actions">
-      <span class="chat-hint">（占位展示，暂未实现）</span>
+      <button id="parseBtn" type="button" class="action-btn">解析条件</button>
+      <button id="composeBtn" type="button" class="action-btn secondary">生成标准话术</button>
+      <button id="previewVisitPptBtn" type="button" class="action-btn">预览匹配PPT</button>
+      <button id="generateVisitPptBtn" type="button" class="action-btn secondary" disabled>确认后生成PPT</button>
+      <button id="saveBtn" type="button" class="action-btn tertiary">保存到历史会话</button>
+    </div>
+    <div style="margin-top:8px; text-align:center;">
+      <button id="toggleDetailBtn" type="button" class="action-btn secondary" style="padding:6px 10px; font-size:13px;">收起条件面板</button>
     </div>
   </div>
-  <div class="chat-quick-tags" style="margin-top: 24px;">
-    <span class="tag">写作</span>
-    <span class="tag">PPT</span>
-    <span class="tag">视频</span>
-    <span class="tag">设计</span>
-    <span class="tag">Excel</span>
-    <span class="tag">网页</span>
+
+  <div id="detailPanelWrap">
+  <div class="filter-panel">
+    <div class="field">
+      <label>行业（单选）</label>
+      <select id="industrySelect">
+        <option>装备制造</option>
+        <option selected>电子高科技</option>
+        <option>汽车零部件</option>
+        <option>生命科学</option>
+        <option>食品消费</option>
+        <option>流程制造</option>
+        <option>现代服务</option>
+        <option>日化日用品</option>
+        <option>现代农牧业</option>
+        <option>餐饮行业</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>客户名称（手动输入）</label>
+      <input id="customerInput" type="text" value="冠旭电子" placeholder="请输入客户名称" />
+    </div>
+    <div class="field">
+      <label>时长（单选）</label>
+      <select id="durationSelect">
+        <option selected>15分钟</option>
+        <option>30分钟</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>产品（单选）</label>
+      <select id="productSelect">
+        <option selected>金蝶AI星空</option>
+        <option>金蝶AI星瀚</option>
+        <option>金蝶AI HR</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>拜访角色（单选）</label>
+      <select id="roleSelect">
+        <option>老板</option>
+        <option>供应链负责人</option>
+        <option selected>财务负责人</option>
+        <option>生产制造负责人</option>
+        <option>IT负责人</option>
+      </select>
+    </div>
+    <div class="field full">
+      <label>业务域（多选）</label>
+      <div id="domainGroup" class="domain-group">
+        <label><input type="checkbox" value="财务管理" checked /> 财务管理</label>
+        <label><input type="checkbox" value="供应链管理" /> 供应链管理</label>
+        <label><input type="checkbox" value="采购管理" checked /> 采购管理</label>
+        <label><input type="checkbox" value="服务管理" /> 服务管理</label>
+        <label><input type="checkbox" value="研发管理" /> 研发管理</label>
+        <label><input type="checkbox" value="生产管理" /> 生产管理</label>
+        <label><input type="checkbox" value="资产管理" /> 资产管理</label>
+        <label><input type="checkbox" value="人力资源管理" /> 人力资源管理</label>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <div class="parsed-box">
+    <div><strong>解析结果：</strong></div>
+    <div id="parsedResult" class="parsed-result">待解析...</div>
+  </div>
+  <div class="parsed-box" id="visitProgressBox" style="display:none;">
+    <div><strong>处理进度：</strong></div>
+    <div style="margin-top:8px; height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden;">
+      <div id="visitProgressFill" style="width:0%; height:100%; background:linear-gradient(90deg,#2563eb,#38bdf8); transition: width .35s ease;"></div>
+    </div>
+    <div id="visitProgressText" class="parsed-result" style="margin-top:8px;">准备中...</div>
+  </div>
+  <div class="parsed-box" id="matchPreviewBox" style="display:none;">
+    <div><strong>前3个匹配PPT预览：</strong></div>
+    <div id="matchPreviewList" class="parsed-result"></div>
   </div>
 </div>
 <style>
@@ -28,7 +106,7 @@
     padding: 60px 24px;
   }
   .chat-input-wrap {
-    max-width: 560px;
+    max-width: 860px;
     margin: 0 auto;
   }
   .chat-input-box {
@@ -50,25 +128,447 @@
     background: transparent;
     font-size: 16px;
     outline: none;
+    resize: none;
+    font-family: inherit;
   }
   .chat-input-actions {
     margin-top: 10px;
-    font-size: 13px;
-    color: #94a3b8;
-  }
-  .chat-quick-tags {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    gap: 8px;
     justify-content: center;
   }
-  .tag {
-    padding: 8px 16px;
-    border: 1px solid #e2e8f0;
-    border-radius: 999px;
+  .action-btn {
+    background: #2563eb;
+    color: #fff;
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 14px;
+    cursor: pointer;
     font-size: 14px;
-    color: #64748b;
+  }
+  .action-btn.secondary {
+    background: #334155;
+  }
+  .action-btn.tertiary {
+    background: #0f766e;
+  }
+  .filter-panel {
+    margin: 24px auto 0;
+    max-width: 860px;
+    padding: 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    background: #fff;
+    text-align: left;
+  }
+  .field.full {
+    grid-column: 1 / -1;
+  }
+  .field label {
+    font-size: 14px;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .field select {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  .domain-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    font-size: 14px;
+    color: #334155;
+  }
+  .parsed-box {
+    margin: 16px auto 0;
+    max-width: 860px;
+    padding: 12px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px;
     background: #f8fafc;
+    text-align: left;
+  }
+  .parsed-result {
+    margin-top: 6px;
+    color: #334155;
+    line-height: 1.6;
   }
 </style>
+<script>
+  const queryInput = document.getElementById("queryInput");
+  const parseBtn = document.getElementById("parseBtn");
+  const composeBtn = document.getElementById("composeBtn");
+  const previewVisitPptBtn = document.getElementById("previewVisitPptBtn");
+  const generateVisitPptBtn = document.getElementById("generateVisitPptBtn");
+  const saveBtn = document.getElementById("saveBtn");
+  const toggleDetailBtn = document.getElementById("toggleDetailBtn");
+  const industrySelect = document.getElementById("industrySelect");
+  const customerInput = document.getElementById("customerInput");
+  const durationSelect = document.getElementById("durationSelect");
+  const productSelect = document.getElementById("productSelect");
+  const roleSelect = document.getElementById("roleSelect");
+  const domainGroup = document.getElementById("domainGroup");
+  const parsedResult = document.getElementById("parsedResult");
+  const visitProgressBox = document.getElementById("visitProgressBox");
+  const visitProgressFill = document.getElementById("visitProgressFill");
+  const visitProgressText = document.getElementById("visitProgressText");
+  const matchPreviewBox = document.getElementById("matchPreviewBox");
+  const matchPreviewList = document.getElementById("matchPreviewList");
+  const detailPanelWrap = document.getElementById("detailPanelWrap");
+  let selectedMatchIds = [];
+  let progressTimer = null;
+
+  const industries = ["装备制造", "电子高科技", "汽车零部件", "生命科学", "食品消费", "流程制造", "现代服务", "日化日用品", "现代农牧业", "餐饮行业"];
+  const industryAlias = { "电子高科": "电子高科技" };
+  const roles = ["老板", "供应链负责人", "财务负责人", "生产制造负责人", "IT负责人"];
+  const roleAlias = { CFO: "财务负责人", cfo: "财务负责人", CEO: "老板", ceo: "老板", CIO: "IT负责人", cio: "IT负责人" };
+  const products = ["金蝶AI星空", "金蝶AI星瀚", "金蝶AI HR"];
+
+  function getSelectedDomains() {
+    return Array.from(domainGroup.querySelectorAll("input[type='checkbox']:checked")).map((x) => x.value);
+  }
+
+  function setDomainByText(text) {
+    const checks = Array.from(domainGroup.querySelectorAll("input[type='checkbox']"));
+    checks.forEach((c) => {
+      c.checked = text.includes(c.value);
+    });
+    if (!getSelectedDomains().length) checks[0].checked = true;
+  }
+
+  function parseNaturalLanguage(text) {
+    const content = text || "";
+    let industry = industries.find((x) => content.includes(x)) || "";
+    if (!industry) {
+      Object.entries(industryAlias).forEach(([k, v]) => {
+        if (!industry && content.includes(k)) industry = v;
+      });
+    }
+    if (industry) industrySelect.value = industry;
+
+    let role = roles.find((x) => content.includes(x)) || "";
+    if (!role) {
+      Object.entries(roleAlias).forEach(([k, v]) => {
+        if (!role && content.includes(k)) role = v;
+      });
+    }
+    if (role) roleSelect.value = role;
+
+    const duration = content.includes("30分钟") ? "30分钟" : content.includes("15分钟") ? "15分钟" : "";
+    if (duration) durationSelect.value = duration;
+
+    const product = products.find((x) => content.includes(x)) || "";
+    if (product) productSelect.value = product;
+
+    setDomainByText(content);
+
+    let customer = "";
+    const m1 = content.match(/拜访[^\u4e00-\u9fffA-Za-z0-9]*([^\s，。、“”]+?)(?:企业|公司)/);
+    if (m1 && m1[1]) customer = m1[1];
+    const m2 = content.match(/客户是([^\s，。、“”]+)/);
+    const customerOrRole = m2 && m2[1] ? m2[1] : "";
+    const isRoleAlias = !!roleAlias[customerOrRole];
+    if (!customer && customerOrRole && !roles.includes(customerOrRole) && !isRoleAlias) customer = customerOrRole;
+    if (customer) customerInput.value = customer;
+
+    const info = {
+      industry: industrySelect.value,
+      duration: durationSelect.value,
+      product: productSelect.value,
+      role: roleSelect.value,
+      domains: getSelectedDomains(),
+      customer: (customerInput.value || customer || "冠旭电子").trim(),
+    };
+    parsedResult.textContent = `行业: ${info.industry} | 业务域: ${info.domains.join("、")} | 拜访角色: ${info.role} | 客户: ${info.customer} | 时长: ${info.duration} | 产品: ${info.product}`;
+    return info;
+  }
+
+  function getInfoFromControls() {
+    const domains = getSelectedDomains();
+    return {
+      industry: industrySelect.value,
+      duration: durationSelect.value,
+      product: productSelect.value,
+      role: roleSelect.value,
+      domains: domains.length ? domains : ["财务管理"],
+      customer: (customerInput.value || "").trim() || "冠旭电子",
+    };
+  }
+
+  function setDomainsByValues(values) {
+    const picked = new Set((values || []).map((x) => String(x)));
+    domainGroup.querySelectorAll("input[type='checkbox']").forEach((el) => {
+      el.checked = picked.has(el.value);
+    });
+    if (!getSelectedDomains().length) {
+      const first = domainGroup.querySelector("input[type='checkbox']");
+      if (first) first.checked = true;
+    }
+  }
+
+  function buildPromptBySelection() {
+    const info = getInfoFromControls();
+    const sentence = `我要拜访${info.industry}行业的${info.customer}企业，面向${info.role}，围绕${info.domains.join("、")}，用${info.duration}介绍${info.product}产品。`;
+    queryInput.value = sentence;
+    parsedResult.textContent = `已生成话术: ${sentence}`;
+    return { info, sentence };
+  }
+
+  async function parseByModel() {
+    const raw = queryInput.value.trim();
+    if (!raw) return;
+    const fd = new FormData();
+    fd.append("query", raw);
+    fd.append("model", "deepseek-chat");
+    parseBtn.disabled = true;
+    parsedResult.textContent = "正在调用模型解析条件...";
+    try {
+      const resp = await fetch("/api/new-chat/parse", { method: "POST", body: fd });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.detail || "解析失败");
+      const item = data.item || {};
+      if (item.industry) industrySelect.value = item.industry;
+      if (item.customer) customerInput.value = item.customer;
+      if (item.duration) durationSelect.value = item.duration;
+      if (item.product_name) productSelect.value = item.product_name;
+      if (item.visit_role) roleSelect.value = item.visit_role;
+      setDomainsByValues(item.business_domains || []);
+      const info = getInfoFromControls();
+      parsedResult.textContent = `行业: ${info.industry} | 业务域: ${info.domains.join("、")} | 拜访角色: ${info.role} | 客户: ${info.customer} | 时长: ${info.duration} | 产品: ${info.product}`;
+    } catch (_) {
+      // 失败回退本地规则
+      parseNaturalLanguage(raw);
+    } finally {
+      parseBtn.disabled = false;
+    }
+  }
+
+  async function saveSessionRecord() {
+    const rawQuery = queryInput.value.trim();
+    const { info, sentence } = buildPromptBySelection();
+    const fd = new FormData();
+    fd.append("raw_query", rawQuery);
+    fd.append("generated_prompt", sentence);
+    fd.append("industry", info.industry);
+    fd.append("customer", info.customer);
+    fd.append("duration", info.duration);
+    fd.append("product_name", info.product);
+    fd.append("visit_role", info.role);
+    fd.append("business_domains", info.domains.join(","));
+    try {
+      const resp = await fetch("/api/history-sessions", { method: "POST", body: fd });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.detail || "保存失败");
+      parsedResult.textContent = `已保存会话 #${data.item.id}：${sentence}`;
+    } catch (err) {
+      parsedResult.textContent = `保存失败：${err.message}`;
+    }
+  }
+
+  function parseFilename(contentDisposition, fallback = "visit_plan.pptx") {
+    if (!contentDisposition) return fallback;
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match && utf8Match[1]) {
+      try { return decodeURIComponent(utf8Match[1]); } catch (_) {}
+    }
+    const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+    return plainMatch?.[1] || fallback;
+  }
+
+  function parseTemplateSource(source) {
+    if (source === "upload") return "上传模板";
+    if (source === "unified_db") return "统一模板";
+    return "未知";
+  }
+
+  async function generateVisitPpt() {
+    const { info, sentence } = buildPromptBySelection();
+    const fd = new FormData();
+    fd.append("industry", info.industry);
+    fd.append("customer", info.customer);
+    fd.append("product_name", info.product);
+    fd.append("visit_role", info.role);
+    fd.append("business_domains", info.domains.join(","));
+    fd.append("model", "deepseek-chat");
+    if (selectedMatchIds.length) {
+      fd.append("match_ids", selectedMatchIds.join(","));
+    }
+
+    generateVisitPptBtn.disabled = true;
+    previewVisitPptBtn.disabled = true;
+    setDetailPanelCollapsed(true);
+    startVisitProgress([
+      { p: 10, t: "开始生成：已提交参数..." },
+      { p: 30, t: "正在检索行业与客户信息..." },
+      { p: 55, t: "正在整理两页拜访摘要内容..." },
+      { p: 78, t: "正在合并匹配PPT..." },
+      { p: 92, t: "正在打包生成下载文件..." },
+    ], 2200);
+    parsedResult.textContent = "正在生成拜访PPT，请稍候...";
+    try {
+      const resp = await fetch("/api/generate-visit-ppt", { method: "POST", body: fd });
+      if (!resp.ok) {
+        const msg = await resp.text();
+        throw new Error(msg || "生成失败");
+      }
+      finishVisitProgress("生成完成，正在触发下载...", true);
+      const blob = await resp.blob();
+      const filename = parseFilename(resp.headers.get("Content-Disposition"), "visit_plan.pptx");
+      const templateSource = parseTemplateSource(resp.headers.get("X-Template-Source"));
+      const matchedCount = Number(resp.headers.get("X-Matched-PPT-Count") || "0");
+      const importedSlides = Number(resp.headers.get("X-Merge-Imported-Slides") || "0");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      parsedResult.textContent = `已生成并下载：${sentence} | 模板来源：${templateSource} | 匹配PPT：${matchedCount}个 | 合并页数：${importedSlides}页`;
+    } catch (err) {
+      finishVisitProgress(`生成失败：${err.message}`, false);
+      parsedResult.textContent = `生成失败：${err.message}`;
+    } finally {
+      generateVisitPptBtn.disabled = false;
+      previewVisitPptBtn.disabled = false;
+    }
+  }
+
+  async function previewVisitPpts() {
+    const { info } = buildPromptBySelection();
+    const fd = new FormData();
+    fd.append("product_name", info.product);
+    fd.append("visit_role", info.role);
+    fd.append("business_domains", info.domains.join(","));
+
+    previewVisitPptBtn.disabled = true;
+    generateVisitPptBtn.disabled = true;
+    setDetailPanelCollapsed(true);
+    startVisitProgress([
+      { p: 15, t: "正在检索库内章节..." },
+      { p: 45, t: "正在计算命中分..." },
+      { p: 80, t: "正在整理前3个匹配结果..." },
+    ], 900);
+    parsedResult.textContent = "正在检索匹配PPT，请稍候...";
+    matchPreviewBox.style.display = "none";
+    try {
+      const resp = await fetch("/api/generate-visit-ppt/preview", { method: "POST", body: fd });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.detail || "预览失败");
+      const items = data.items || [];
+      if (!items.length) {
+        selectedMatchIds = [];
+        matchPreviewBox.style.display = "block";
+        matchPreviewList.textContent = "未找到匹配PPT，将仅基于模板+行业客户两页内容生成。";
+      } else {
+        selectedMatchIds = items.map((x) => Number(x.chapter_id)).filter((x) => Number.isFinite(x));
+        matchPreviewBox.style.display = "block";
+        matchPreviewList.innerHTML = items.map((x, idx) => {
+          const source = escapeHtml(x.source_filename || "未知来源");
+          const title = escapeHtml(x.title || `匹配PPT${idx + 1}`);
+          const score = Number(x.score || 0);
+          return `${idx + 1}. ${title} ｜ 来源: ${source} ｜ 命中分: ${score}`;
+        }).join("<br/>");
+      }
+      parsedResult.textContent = "已完成匹配预览，请点击“确认后生成PPT”。";
+      finishVisitProgress("预览完成，可确认生成。", true);
+      generateVisitPptBtn.disabled = false;
+    } catch (err) {
+      selectedMatchIds = [];
+      matchPreviewBox.style.display = "block";
+      matchPreviewList.textContent = `预览失败：${err.message}`;
+      parsedResult.textContent = "预览失败，请重试。";
+      finishVisitProgress(`预览失败：${err.message}`, false);
+      generateVisitPptBtn.disabled = true;
+    } finally {
+      previewVisitPptBtn.disabled = false;
+    }
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+  }
+
+  function resetPreviewState() {
+    selectedMatchIds = [];
+    generateVisitPptBtn.disabled = true;
+    matchPreviewBox.style.display = "none";
+    visitProgressBox.style.display = "none";
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+  }
+
+  function setDetailPanelCollapsed(collapsed) {
+    detailPanelWrap.style.display = collapsed ? "none" : "block";
+    toggleDetailBtn.textContent = collapsed ? "展开条件面板" : "收起条件面板";
+  }
+
+  function startVisitProgress(stages, intervalMs) {
+    if (progressTimer) clearInterval(progressTimer);
+    visitProgressBox.style.display = "block";
+    visitProgressFill.style.width = "6%";
+    visitProgressText.textContent = "准备中...";
+    let idx = 0;
+    progressTimer = setInterval(() => {
+      if (idx >= stages.length) return;
+      visitProgressFill.style.width = `${stages[idx].p}%`;
+      visitProgressText.textContent = stages[idx].t;
+      idx += 1;
+    }, intervalMs || 1000);
+  }
+
+  function finishVisitProgress(text, ok) {
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+    visitProgressFill.style.width = ok ? "100%" : "0%";
+    visitProgressText.textContent = text;
+  }
+
+  parseBtn.addEventListener("click", async () => {
+    await parseByModel();
+    resetPreviewState();
+  });
+  composeBtn.addEventListener("click", () => {
+    buildPromptBySelection();
+    resetPreviewState();
+  });
+  previewVisitPptBtn.addEventListener("click", previewVisitPpts);
+  generateVisitPptBtn.addEventListener("click", generateVisitPpt);
+  saveBtn.addEventListener("click", saveSessionRecord);
+  toggleDetailBtn.addEventListener("click", () => {
+    const collapsed = detailPanelWrap.style.display === "none";
+    setDetailPanelCollapsed(!collapsed);
+  });
+  [industrySelect, durationSelect, productSelect, roleSelect].forEach((el) => {
+    el.addEventListener("change", () => {
+      buildPromptBySelection();
+      resetPreviewState();
+    });
+  });
+  customerInput.addEventListener("input", () => {
+    buildPromptBySelection();
+    resetPreviewState();
+  });
+  domainGroup.querySelectorAll("input[type='checkbox']").forEach((el) => {
+    el.addEventListener("change", () => {
+      buildPromptBySelection();
+      resetPreviewState();
+    });
+  });
+
+  parseNaturalLanguage(queryInput.value);
+  setDetailPanelCollapsed(false);
+</script>
 {% endblock %}

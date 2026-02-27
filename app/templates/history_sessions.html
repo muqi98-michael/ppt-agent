@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}历史会话 - 金蝶AI产品方案助手{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>历史会话</h1>
+  <p class="subtitle">展示“新对话”生成并保存的话术记录，可用于复用与追溯。</p>
+  <div style="display:flex; gap:8px; margin-bottom:12px;">
+    <button id="refreshBtn" type="button">刷新</button>
+  </div>
+  <div id="sessionList" style="display:grid; gap:10px;"></div>
+</div>
+<script>
+  const listEl = document.getElementById("sessionList");
+  const refreshBtn = document.getElementById("refreshBtn");
+
+  async function loadSessions() {
+    listEl.innerHTML = '<div style="color:#64748b">加载中...</div>';
+    try {
+      const resp = await fetch("/api/history-sessions?limit=200");
+      const data = await resp.json();
+      const items = data.items || [];
+      if (!items.length) {
+        listEl.innerHTML = '<div style="padding:12px;border:1px dashed #cbd5e1;border-radius:10px;color:#64748b;">暂无历史会话记录。</div>';
+        return;
+      }
+      listEl.innerHTML = "";
+      items.forEach((it) => {
+        const box = document.createElement("div");
+        box.style.cssText = "padding:12px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;";
+        box.innerHTML = `
+          <div style="font-weight:700;color:#1e293b;">#${it.id} | ${escapeHtml(it.customer)} | ${escapeHtml(it.industry)} | ${escapeHtml(it.created_at)}</div>
+          <div style="margin-top:6px;color:#334155;font-size:14px;">角色: ${escapeHtml(it.visit_role)} ｜ 产品: ${escapeHtml(it.product_name)} ｜ 时长: ${escapeHtml(it.duration)} ｜ 业务域: ${escapeHtml(it.business_domains)}</div>
+          <div style="margin-top:6px;padding:8px;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:#0f172a;">${escapeHtml(it.generated_prompt)}</div>
+        `;
+        listEl.appendChild(box);
+      });
+    } catch (e) {
+      listEl.innerHTML = `<div style="color:#b91c1c;">加载失败: ${escapeHtml(e.message || "未知错误")}</div>`;
+    }
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+  }
+
+  refreshBtn.addEventListener("click", loadSessions);
+  loadSessions();
+</script>
+{% endblock %}

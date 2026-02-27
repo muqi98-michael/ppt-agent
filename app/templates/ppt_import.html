@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% block title %}PPT自动入库 - 金蝶{% endblock %}
+{% block extra_css %}
+.chapter-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  background: #fff;
+}
+.chapter-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #1e293b;
+}
+.chapter-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+.chapter-summary {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #0f172a;
+  white-space: pre-wrap;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #eef6ff;
+  border-left: 3px solid #2563eb;
+  border-radius: 8px;
+}
+.chapter-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.btn-download {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn-download:hover { background: #1d4ed8; }
+#resultArea { display: none; margin-top: 24px; }
+#status { margin-top: 12px; white-space: pre-wrap; }
+.status-error { color: #b91c1c; }
+.db-info {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  display: none;
+  white-space: pre-wrap;
+}
+.progress-wrap { display: none; margin-top: 12px; }
+.progress-bar {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+  transition: width 0.4s ease;
+}
+.progress-meta {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  color: #64748b;
+  font-size: 13px;
+}
+{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>PPT自动入库</h1>
+  <p class="subtitle">对上传的 PPT，自动按章节分拆，生成文本和概要总结，并生成章节独立的 PPT，支持单章下载或全部打包下载。</p>
+
+  <form id="importForm">
+    <div class="field">
+      <label for="file">上传 PPT (.pptx，可多选)</label>
+      <input id="file" name="files" type="file" accept=".pptx" multiple required />
+    </div>
+    <button type="submit">开始处理</button>
+  </form>
+
+  <div id="progressWrap" class="progress-wrap">
+    <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+    <div class="progress-meta">
+      <span id="progressText">准备中...</span>
+      <span id="progressPercent">0%</span>
+    </div>
+  </div>
+
+  <div id="status"></div>
+  <div id="dbInfo" class="db-info"></div>
+  <div id="resultArea">
+    <h2 style="margin: 24px 0 16px; font-size: 18px;">分拆结果</h2>
+    <div id="chaptersList"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+  const form = document.getElementById("importForm");
+  const status = document.getElementById("status");
+  const resultArea = document.getElementById("resultArea");
+  const chaptersList = document.getElementById("chaptersList");
+  const progressWrap = document.getElementById("progressWrap");
+  const progressFill = document.getElementById("progressFill");
+  const progressText = document.getElementById("progressText");
+  const progressPercent = document.getElementById("progressPercent");
+  const dbInfo = document.getElementById("dbInfo");
+  let progressTimer = null;
+
+  function setStatus(text, isError = false) {
+    status.textContent = text;
+    status.className = isError ? "status-error" : "";
+  }
+
+  function setFormDisabled(disabled) {
+    Array.from(form.elements).forEach((el) => {
+      el.disabled = disabled;
+    });
+  }
+
+  function startProgress(totalFiles) {
+    progressWrap.style.display = "block";
+    progressFill.style.width = "0%";
+    progressPercent.textContent = "0%";
+    progressText.textContent = `准备处理中（共 ${totalFiles} 个文件）...`;
+  }
+
+  function updateFileProgress(currentIndex, totalFiles, fileName, inFileRatio = 0) {
+    const base = ((currentIndex - 1) / totalFiles) * 100;
+    const step = (1 / totalFiles) * 100;
+    const percent = Math.min(99, Math.max(0, base + step * inFileRatio));
+    const p = Math.round(percent);
+    progressFill.style.width = `${p}%`;
+    progressPercent.textContent = `${p}%`;
+    progressText.textContent = `正在处理第 ${currentIndex}/${totalFiles} 个文件：${fileName}`;
+  }
+
+  function finishProgress(ok) {
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+    if (ok) {
+      progressFill.style.width = "100%";
+      progressPercent.textContent = "100%";
+      progressText.textContent = "处理完成";
+    } else {
+      progressFill.style.width = "0%";
+      progressPercent.textContent = "0%";
+      progressText.textContent = "处理失败";
+    }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fileInput = document.getElementById("file");
+    if (!fileInput.files.length) {
+      setStatus("请选择文件", true);
+      return;
+    }
+
+    const fileCount = fileInput.files.length;
+    setStatus(`处理中，请稍候...（共 ${fileCount} 个文件）`);
+    dbInfo.style.display = "none";
+    dbInfo.textContent = "";
+    resultArea.style.display = "none";
+    chaptersList.innerHTML = "";
+    setFormDisabled(true);
+    startProgress(fileCount);
+
+    try {
+      const mergedItems = [];
+      let latestDbInfo = null;
+
+      for (let i = 0; i < fileInput.files.length; i++) {
+        const f = fileInput.files[i];
+        const currentIndex = i + 1;
+        updateFileProgress(currentIndex, fileInput.files.length, f.name, 0.1);
+
+        let localRatio = 0.1;
+        progressTimer = setInterval(() => {
+          localRatio = Math.min(0.92, localRatio + 0.08);
+          updateFileProgress(currentIndex, fileInput.files.length, f.name, localRatio);
+        }, 800);
+
+        const fd = new FormData();
+        fd.append("files", f);
+        const resp = await fetch("/ppt-import", { method: "POST", body: fd });
+        const raw = await resp.text();
+        let data = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch (_) {
+          data = { detail: raw || `HTTP ${resp.status}` };
+        }
+        if (progressTimer) {
+          clearInterval(progressTimer);
+          progressTimer = null;
+        }
+
+        if (!resp.ok) {
+          finishProgress(false);
+          setStatus(`第 ${currentIndex} 个文件失败：` + (data.detail || resp.statusText), true);
+          return;
+        }
+
+        const items = data.items || (data.chapters ? [data] : []);
+        if (items.length) {
+          mergedItems.push(...items);
+          latestDbInfo = items[items.length - 1].db_info || latestDbInfo;
+        }
+        updateFileProgress(currentIndex, fileInput.files.length, f.name, 1);
+      }
+
+      const items = mergedItems;
+      if (!items.length) {
+        finishProgress(false);
+        setStatus("未检测到有效章节，请检查 PPT 结构。", true);
+        return;
+      }
+
+      finishProgress(true);
+      const totalChapters = items.reduce((acc, it) => acc + ((it.chapters || []).length), 0);
+      setStatus(`完成：共处理 ${items.length} 个文件，合计 ${totalChapters} 个章节`);
+
+      const firstInfo = latestDbInfo || items[0]?.db_info;
+      if (firstInfo) {
+        const tables = (firstInfo.tables || []).map((t) => `${t.name}(${t.rows})`).join(", ");
+        const savedJobs = items.map((it) => it.db_info?.saved_job_id).filter(Boolean).join(", ");
+        dbInfo.textContent =
+          `数据库类型: ${firstInfo.db_type}\n` +
+          `数据库名称: ${firstInfo.database_name}\n` +
+          `数据表: ${tables}\n` +
+          `本次入库文件数: ${items.length}\n` +
+          `本次入库ID: ${savedJobs}`;
+        dbInfo.style.display = "block";
+      }
+      resultArea.style.display = "block";
+
+      items.forEach((item, fileIndex) => {
+        const chapters = item.chapters || [];
+        const fileHeader = document.createElement("div");
+        fileHeader.className = "chapter-card";
+        fileHeader.innerHTML = `
+          <div class="chapter-title">文件${fileIndex + 1}：${escapeHtml(item.source_filename || `第${fileIndex + 1}个文件`)}</div>
+          <div class="chapter-summary">章节数：${chapters.length}</div>
+        `;
+        chaptersList.appendChild(fileHeader);
+
+        chapters.forEach((ch, i) => {
+          const card = document.createElement("div");
+          card.className = "chapter-card";
+          card.innerHTML = `
+            <div class="chapter-title">${escapeHtml(ch.title)}（${ch.slide_count} 页）</div>
+            <div class="chapter-summary"><strong>提炼总结：</strong>${escapeHtml(ch.summary || "暂无摘要")}</div>
+            <div class="chapter-content">${escapeHtml(ch.content)}</div>
+            <div class="chapter-actions">
+              <button type="button" class="btn-download" data-chapter="${i}">下载本章 PPT</button>
+            </div>
+          `;
+          card.querySelector(".btn-download").addEventListener("click", () => {
+            const b64 = chapters[i].ppt_base64;
+            const blob = base64ToBlob(b64, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `章节${i + 1}_${ch.title.replace(/[\n\\/:*?"<>|]/g, "_").slice(0, 50)}.pptx`;
+            a.click();
+            URL.revokeObjectURL(url);
+          });
+          chaptersList.appendChild(card);
+        });
+
+        const allBtn = document.createElement("div");
+        allBtn.className = "chapter-card";
+        allBtn.innerHTML = '<button type="button" class="btn-download" id="downloadAllBtn">下载该文件全部章节（ZIP）</button>';
+        allBtn.querySelector("#downloadAllBtn").addEventListener("click", () => {
+          const zipB64 = item.zip_base64;
+          if (zipB64) {
+            const blob = base64ToBlob(zipB64, "application/zip");
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${(item.source_filename || `文件${fileIndex + 1}`).replace(/\.[^.]+$/, "")}_分拆章节.zip`;
+            a.click();
+            URL.revokeObjectURL(url);
+          } else {
+            const zip = new JSZip();
+            chapters.forEach((ch, i) => {
+              const blob = base64ToBlob(ch.ppt_base64, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+              zip.file(`章节${i + 1}_${ch.title.replace(/[\n\\/:*?"<>|]/g, "_").slice(0, 50)}.pptx`, blob);
+            });
+            zip.generateAsync({ type: "blob" }).then(content => {
+              const url = URL.createObjectURL(content);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${(item.source_filename || `文件${fileIndex + 1}`).replace(/\.[^.]+$/, "")}_分拆章节.zip`;
+              a.click();
+              URL.revokeObjectURL(url);
+            });
+          }
+        });
+        chaptersList.appendChild(allBtn);
+      });
+
+    } catch (err) {
+      finishProgress(false);
+      setStatus("请求失败: " + err.message, true);
+    } finally {
+      setFormDisabled(false);
+    }
+  });
+
+  function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+  }
+
+  function base64ToBlob(b64, mime) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+</script>
+{% endblock %}

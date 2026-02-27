@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}方案库管理 - 金蝶{% endblock %}
+{% block extra_css %}
+.row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+.job-select { max-width: 100%; }
+.muted { color: #64748b; font-size: 13px; }
+.template-box {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: #f8fafc;
+}
+.chapter-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: #fff;
+}
+.chapter-title { font-weight: 700; color: #1e293b; margin-bottom: 6px; }
+.btn-sm { padding: 6px 10px; font-size: 13px; border-radius: 6px; }
+.btn-secondary { background: #334155; }
+.btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+#chaptersWrap { margin-top: 16px; }
+{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>方案库管理</h1>
+  <p class="subtitle">查看已入库文件，选择后可下载章节附件（Word / PPT / Markdown）及整包 ZIP。</p>
+
+  <div class="template-box">
+    <div style="font-weight:700; margin-bottom:8px; color:#1e293b;">统一PPT模板导入</div>
+    <div class="row" style="margin-bottom: 8px;">
+      <select id="templateSelect" style="flex:1; min-width: 260px;"></select>
+      <button id="refreshTemplateBtn" type="button" class="btn-sm btn-secondary">刷新列表</button>
+      <button id="deleteTemplateBtn" type="button" class="btn-sm" style="background:#dc2626;">删除模板</button>
+    </div>
+    <div class="row" style="margin-bottom: 8px;">
+      <input id="templateFile" type="file" accept=".pptx" style="flex:1;" />
+      <button id="uploadTemplateBtn" type="button" class="btn-sm">导入统一模板</button>
+      <button id="downloadTemplateBtn" type="button" class="btn-sm btn-secondary">下载当前模板</button>
+    </div>
+    <div id="templateMeta" class="muted">尚未加载模板信息。</div>
+  </div>
+
+  <div class="row">
+    <label for="jobSelect" style="min-width: 90px; margin: 0">入库文件</label>
+    <select id="jobSelect" class="job-select"></select>
+    <button id="deleteJobBtn" type="button" class="btn-sm" style="background:#dc2626;">删除整件</button>
+    <button id="refreshBtn" type="button" class="btn-sm btn-secondary">刷新</button>
+  </div>
+
+  <div id="jobMeta" class="muted">正在加载...</div>
+  <div class="row" style="margin-top: 10px;">
+    <button id="downloadZipBtn" type="button" class="btn-sm">下载整包 ZIP</button>
+  </div>
+
+  <div id="chaptersWrap"></div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+  const jobSelect = document.getElementById("jobSelect");
+  const refreshBtn = document.getElementById("refreshBtn");
+  const deleteJobBtn = document.getElementById("deleteJobBtn");
+  const jobMeta = document.getElementById("jobMeta");
+  const chaptersWrap = document.getElementById("chaptersWrap");
+  const downloadZipBtn = document.getElementById("downloadZipBtn");
+  const templateFile = document.getElementById("templateFile");
+  const templateSelect = document.getElementById("templateSelect");
+  const refreshTemplateBtn = document.getElementById("refreshTemplateBtn");
+  const deleteTemplateBtn = document.getElementById("deleteTemplateBtn");
+  const uploadTemplateBtn = document.getElementById("uploadTemplateBtn");
+  const downloadTemplateBtn = document.getElementById("downloadTemplateBtn");
+  const templateMeta = document.getElementById("templateMeta");
+
+  let jobs = [];
+  let templates = [];
+
+  async function loadTemplateList() {
+    templateMeta.textContent = "正在加载模板列表...";
+    try {
+      const resp = await fetch("/api/practice-library/unified-templates?limit=300");
+      const data = await resp.json();
+      templates = data.items || [];
+      templateSelect.innerHTML = "";
+      if (!templates.length) {
+        templateSelect.innerHTML = '<option value="">暂无模板</option>';
+        templateMeta.textContent = "当前未设置统一PPT模板。";
+        return;
+      }
+      templates.forEach((item) => {
+        const op = document.createElement("option");
+        op.value = String(item.id);
+        op.textContent = `${item.is_active ? "★ " : ""}#${item.id} | ${item.filename} | ${item.created_at}`;
+        templateSelect.appendChild(op);
+      });
+      const active = templates.find((x) => x.is_active) || templates[0];
+      templateSelect.value = String(active.id);
+      templateMeta.textContent = `当前模板: #${active.id} | ${active.filename} | 大小: ${active.file_size || 0} 字节 | 导入时间: ${active.created_at}`;
+    } catch (_) {
+      templateMeta.textContent = "加载统一模板信息失败。";
+    }
+  }
+
+  async function activateTemplate(templateId) {
+    if (!templateId) return;
+    const resp = await fetch(`/api/practice-library/unified-template/${templateId}/activate`, { method: "POST" });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.detail || "切换模板失败");
+    }
+  }
+
+  async function loadJobs() {
+    jobMeta.textContent = "正在加载入库记录...";
+    chaptersWrap.innerHTML = "";
+    const resp = await fetch("/api/practice-library/jobs?limit=200");
+    const data = await resp.json();
+    jobs = data.items || [];
+    jobSelect.innerHTML = "";
+    if (!jobs.length) {
+      jobMeta.textContent = "暂无入库记录。请先在“PPT自动入库”中上传处理。";
+      return;
+    }
+    jobs.forEach((j) => {
+      const op = document.createElement("option");
+      op.value = String(j.id);
+      op.textContent = `#${j.id} | ${j.source_filename} | ${j.chapter_count}章 | ${j.created_at}`;
+      jobSelect.appendChild(op);
+    });
+    await loadJobDetail(Number(jobSelect.value));
+  }
+
+  async function loadJobDetail(jobId) {
+    const resp = await fetch(`/api/practice-library/jobs/${jobId}`);
+    if (!resp.ok) {
+      jobMeta.textContent = "加载失败";
+      chaptersWrap.innerHTML = "";
+      return;
+    }
+    const data = await resp.json();
+    const job = data.job;
+    const chapters = data.chapters || [];
+    jobMeta.textContent = `文件: ${job.source_filename} | 章节数: ${job.chapter_count} | 入库时间: ${job.created_at}`;
+    chaptersWrap.innerHTML = "";
+
+    chapters.forEach((ch) => {
+      const el = document.createElement("div");
+      el.className = "chapter-item";
+      el.innerHTML = `
+        <div class="chapter-title">章节${ch.chapter_index}：${escapeHtml(ch.title)}（${ch.slide_count}页）</div>
+        <div class="muted">${escapeHtml(ch.summary || "暂无摘要")}</div>
+        <div class="btn-row">
+          <button class="btn-sm" data-type="ppt" data-id="${ch.id}">下载PPT</button>
+          <button class="btn-sm btn-secondary" data-type="word" data-id="${ch.id}">下载Word</button>
+          <button class="btn-sm btn-secondary" data-type="md" data-id="${ch.id}">下载Markdown</button>
+          <button class="btn-sm" data-type="delete" data-id="${ch.id}" style="background:#dc2626;">删除本章</button>
+        </div>
+      `;
+      el.querySelectorAll("button[data-type]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const type = btn.getAttribute("data-type");
+          const id = btn.getAttribute("data-id");
+          if (type === "delete") {
+            deleteChapter(Number(id));
+            return;
+          }
+          window.location.href = `/api/practice-library/chapters/${id}/download/${type}`;
+        });
+      });
+      chaptersWrap.appendChild(el);
+    });
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+  }
+
+  jobSelect.addEventListener("change", async () => {
+    if (!jobSelect.value) return;
+    await loadJobDetail(Number(jobSelect.value));
+  });
+
+  refreshBtn.addEventListener("click", loadJobs);
+  uploadTemplateBtn.addEventListener("click", async () => {
+    const file = templateFile.files && templateFile.files[0];
+    if (!file) {
+      alert("请先选择一个 .pptx 模板文件");
+      return;
+    }
+    const fd = new FormData();
+    fd.append("template", file);
+    uploadTemplateBtn.disabled = true;
+    try {
+      const resp = await fetch("/api/practice-library/unified-template", { method: "POST", body: fd });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        throw new Error(data.detail || "导入失败");
+      }
+      templateMeta.textContent = `已导入模板: #${data.item.id} | ${data.item.filename} | ${data.item.created_at}`;
+      templateFile.value = "";
+    } catch (e) {
+      alert(`导入失败: ${e.message || "未知错误"}`);
+    } finally {
+      uploadTemplateBtn.disabled = false;
+      await loadTemplateList();
+    }
+  });
+  templateSelect.addEventListener("change", async () => {
+    const id = Number(templateSelect.value || 0);
+    if (!id) return;
+    try {
+      await activateTemplate(id);
+      await loadTemplateList();
+    } catch (e) {
+      alert(`切换模板失败: ${e.message || "未知错误"}`);
+    }
+  });
+  refreshTemplateBtn.addEventListener("click", loadTemplateList);
+  deleteTemplateBtn.addEventListener("click", async () => {
+    const id = Number(templateSelect.value || 0);
+    if (!id) {
+      alert("请先选择要删除的模板");
+      return;
+    }
+    const selected = templates.find((x) => Number(x.id) === id);
+    const ok = confirm(`确认删除模板？\n${selected ? selected.filename : ""}`);
+    if (!ok) return;
+    const resp = await fetch(`/api/practice-library/unified-template/${id}`, { method: "DELETE" });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      alert(`删除失败: ${data.detail || "未知错误"}`);
+      return;
+    }
+    await loadTemplateList();
+  });
+  downloadTemplateBtn.addEventListener("click", () => {
+    const id = Number(templateSelect.value || 0);
+    const q = id ? `?template_id=${id}` : "";
+    window.location.href = `/api/practice-library/unified-template/download${q}`;
+  });
+  deleteJobBtn.addEventListener("click", async () => {
+    if (!jobSelect.value) return;
+    const selected = jobs.find((x) => String(x.id) === String(jobSelect.value));
+    const ok = confirm(`确认删除整件文件？\\n${selected ? selected.source_filename : ""}\\n将删除其下所有章节与附件。`);
+    if (!ok) return;
+    const resp = await fetch(`/api/practice-library/jobs/${jobSelect.value}`, { method: "DELETE" });
+    if (!resp.ok) {
+      alert("删除失败");
+      return;
+    }
+    await loadJobs();
+  });
+  downloadZipBtn.addEventListener("click", () => {
+    if (!jobSelect.value) return;
+    window.location.href = `/api/practice-library/jobs/${jobSelect.value}/zip`;
+  });
+
+  async function deleteChapter(chapterId) {
+    const ok = confirm("确认删除本章内容及附件？");
+    if (!ok) return;
+    const resp = await fetch(`/api/practice-library/chapters/${chapterId}`, { method: "DELETE" });
+    if (!resp.ok) {
+      alert("删除失败");
+      return;
+    }
+    if (jobSelect.value) {
+      await loadJobDetail(Number(jobSelect.value));
+      await loadJobs();
+    }
+  }
+
+  loadTemplateList();
+  loadJobs();
+</script>
+{% endblock %}

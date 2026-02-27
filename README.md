@@ -32,6 +32,10 @@ python3 -m venv .venv
   - `template`: 单个 `.pptx`
   - `sources`: 多个 `.pptx`
   - 返回：`application/vnd.openxmlformats-officedocument.presentationml.presentation`
+- `GET /ppt-import`：PPT自动入库页面
+- `POST /ppt-import`：
+  - `file`: 单个 `.pptx`
+  - 返回：`{ chapters: [{ title, content, slide_count, ppt_base64 }] }`，按章节拆分后各章内容及 PPT
 - `GET /search-fill`：PPT搜索填入页面
 - `POST /search-fill`：
   - `industry`: 行业（表单字段）

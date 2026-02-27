@@ -5,5 +5,6 @@ python-pptx
 jinja2
 python-dotenv
 Pillow
+python-docx
 pytest
 httpx

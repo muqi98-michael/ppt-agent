@@ -35,8 +35,9 @@
       </select>
     </div>
     <div class="field">
-      <label for="template">上传模板 PPT (.pptx)</label>
-      <input id="template" name="template" type="file" accept=".pptx" required />
+      <label for="template">上传模板 PPT (.pptx，可选)</label>
+      <input id="template" name="template" type="file" accept=".pptx" />
+      <div style="margin-top: 6px; color:#64748b; font-size:13px;">优先使用本次上传模板；未上传时自动使用“方案库管理”中的统一模板。</div>
     </div>
     <button type="submit">联网生成并下载</button>
   </form>
@@ -96,6 +97,12 @@
     }
     const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
     return plainMatch?.[1] || "search_fill_output.pptx";
+  }
+
+  function parseTemplateSource(source) {
+    if (source === "upload") return "上传模板";
+    if (source === "unified_db") return "统一模板";
+    return "未知";
   }
 
   async function loadLogs() {
@@ -167,6 +174,7 @@
       progressFill.style.width = "100%";
       const blob = await resp.blob();
       const filename = parseFilename(resp.headers.get("Content-Disposition"));
+      const templateSource = parseTemplateSource(resp.headers.get("X-Template-Source"));
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -174,7 +182,7 @@
       a.click();
       URL.revokeObjectURL(url);
       etaText.textContent = "预计剩余时间：00:00";
-      setStatus("完成：已生成并下载新增2页分析内容的PPT。", "ok");
+      setStatus(`完成：已生成并下载新增2页分析内容的PPT。模板来源：${templateSource}`, "ok");
     } catch (error) {
       clearInterval(stageTimer);
       clearInterval(etaTimer);
@@ -205,7 +213,10 @@
     fd.append("industry", document.getElementById("industry").value.trim());
     fd.append("customer", document.getElementById("customer").value.trim());
     fd.append("model", document.getElementById("model").value);
-    fd.append("template", document.getElementById("template").files[0]);
+    const templateFile = document.getElementById("template").files[0];
+    if (templateFile) {
+      fd.append("template", templateFile);
+    }
     lastPayload = fd;
     await submitSearchFill(fd);
   });
