@@ -15,7 +15,19 @@ def _connect() -> sqlite3.Connection:
     DB_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        # 若文件是无效 SQLite（如 CI 中未拉取 LFS 对象的 pointer 文本），自动重建。
+        conn.execute("PRAGMA schema_version").fetchone()
+        return conn
+    except sqlite3.DatabaseError:
+        conn.close()
+        try:
+            DB_PATH.unlink(missing_ok=True)
+        except Exception:
+            pass
+        rebuilt = sqlite3.connect(DB_PATH)
+        rebuilt.row_factory = sqlite3.Row
+        return rebuilt
 
 
 def init_db() -> None:
